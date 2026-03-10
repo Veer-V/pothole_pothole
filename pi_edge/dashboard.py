@@ -112,32 +112,22 @@ def sensor_thread():
                 time.sleep(1/POLL_HZ)
                 continue
 
-            # Base lining
             if not calibrated:
                 rolling_baseline_buf.append(dist)
-                if len(rolling_baseline_buf) == BASELINE_WINDOW:
+                if len(rolling_baseline_buf) >= BASELINE_WINDOW:
+                    # Lock the baseline permanently
                     baseline_cm = float(np.mean(rolling_baseline_buf))
                     calibrated = True
-                    recalib_streak = 0
-                    logging.info(f"Calibration Complete. Baseline: {baseline_cm:.2f} cm")
+                    logging.info(f"Calibration Complete. Baseline permanently locked at: {baseline_cm:.2f} cm")
             
             if not calibrated:
                 time.sleep(1/POLL_HZ)
                 continue
 
+            # Calculate Deviation
+            # Positive Dev: Reading > Baseline (Road drops away -> Pothole)
+            # Negative Dev: Reading < Baseline (Object closer -> Speed Bump)
             dev = dist - baseline_cm
-            
-            # Recalibration logic
-            if abs(dev) > MAX_PLAUSIBLE:
-                recalib_streak += 1
-                if recalib_streak >= 50:
-                    logging.warning("Massive shift detected. Recalibrating...")
-                    calibrated = False
-                    rolling_baseline_buf.clear()
-                    recalib_streak = 0
-                    continue
-            else:
-                recalib_streak = 0
 
             dist_history.append(dist)
             dev_history.append(dev)
