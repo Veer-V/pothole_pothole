@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartRoad 3D Dashboard</title>
+    <!-- Include Socket.IO -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.js"></script>
+    <!-- Include Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>
+    <!-- Using TailwindCSS for quick styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+
+<body class="p-6">
+    <div class="max-w-7xl mx-auto space-y-6">
+
+        <!-- Header -->
+        <header class="flex justify-between items-center border-b border-gray-700 pb-4">
+            <div>
+                <h1
+                    class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">
+                    SmartRoad Pothole System v2.0
+                </h1>
+                <p class="text-gray-400 mt-1">Live Dashboard — Dual Sensor Fusion + 3D Scanner</p>
+            </div>
+            <div id="connection-status"
+                class="px-4 py-2 rounded-full bg-red-500/20 text-red-500 border border-red-500/50 text-sm font-medium">
+                Disconnected
+            </div>
+        </header>
+
+        <!-- Main Content Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <!-- Left Side: Live Graph -->
+            <div class="lg:col-span-2 bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-xl">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">Live Depth Sensor Profile</h2>
+                    <span id="current-sensor" class="text-xs px-2 py-1 bg-gray-700 rounded text-gray-300">Sensor:
+                        Waiting...</span>
+                </div>
+                <div id="depth-chart" class="w-full h-[400px]"></div>
+            </div>
+
+            <!-- Right Side: Camera & Anomalies -->
+            <div class="space-y-6">
+                <!-- Camera Feed -->
+                <div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-xl">
+                    <h2 class="text-xl font-semibold mb-4">ESP32-CAM Live Feed</h2>
+                    <div
+                        class="relative w-full aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center border border-gray-600">
+                        <!-- We directly embed the live stream URL to stream real-time video to the dashboard -->
+                        <img id="camera-feed" class="w-full h-full object-cover" src="http://192.168.149.173:81/stream"
+                            alt="Camera Stream Disconnected"
+                            onerror="this.onerror=null; this.src=''; this.alt='Stream Offline';" />
+                    </div>
+                </div>
+
+                <!-- Last Anomaly Stats -->
+                <div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-xl">
+                    <h2 class="text-xl font-semibold mb-3">Latest Anomaly</h2>
+                    <div id="anomaly-log" class="space-y-3">
+                        <p class="text-gray-400 italic text-sm">No anomalies logged yet.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Frontend Logic -->
+    <script>
+        // Connect to the Flask-SocketIO server
+        const socket = io();
+
+        // Plotly Chart Setup
+        const chartDiv = document.getElementById('depth-chart');
+        const maxPoints = 100; // Number of points to show on the x-axis
+        let timeArray = [];
+        let depthArray = [];
+
+        const layout = {
+            plot_bgcolor: '#1f2937', paper_bgcolor: '#1f2937',
+            margin: { t: 10, b: 40, l: 40, r: 10 },
+            xaxis: { title: 'Time', showgrid: false, color: '#9ca3af' },
+            yaxis: { title: 'Depth Deviation (cm)', color: '#9ca3af', gridcolor: '#374151' },
+            font: { color: '#f8fafc' },
+            showlegend: false
+        };
+
+        Plotly.newPlot(chartDiv, [{
+            x: timeArray, y: depthArray,
+            type: 'scatter', mode: 'lines',
+            line: { color: '#34d399', width: 2 },
+            fill: 'toself', fillcolor: 'rgba(52, 211, 153, 0.1)'
+        }], layout, { responsive: true });
+
+        // Socket Events
+        socket.on('connect', () => {
+            const el = document.getElementById('connection-status');
+            el.textContent = 'Connected Live';
+            el.className = 'px-4 py-2 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 text-sm font-medium';
+        });
+
+        socket.on('disconnect', () => {
+            const el = document.getElementById('connection-status');
+            el.textContent = 'Disconnected';
+            el.className = 'px-4 py-2 rounded-full bg-red-500/20 text-red-500 border border-red-500/50 text-sm font-medium';
+        });
+
+        socket.on('sensor_data', (data) => {
+            const timeStr = new Date().toLocaleTimeString();
+
+            // Update Sensor Badge
+            document.getElementById('current-sensor').textContent = `Sensor: ${data.source}`;
+
+            // Update Graph
+            timeArray.push(timeStr);
+            depthArray.push(data.relative_depth);
+
+            if (timeArray.length > maxPoints) {
+                timeArray.shift();
+                depthArray.shift();
+            }
+
+            // Change color based on values - Pothole > 5 (red), Bump < -5 (orange), Normal (green)
+            let color = '#34d399'; // Emerald
+            if (data.relative_depth > 5) color = '#ef4444'; // Red for pothole
+            else if (data.relative_depth < -5) color = '#f59e0b'; // Amber for bump
+
+            Plotly.update(chartDiv, {
+                x: [timeArray], y: [depthArray],
+                'line.color': color
+            });
+        });
+
+        socket.on('anomaly', (data) => {
+            // Log to the right panel
+            const logBox = document.getElementById('anomaly-log');
+            if (logBox.innerHTML.includes('No anomalies')) {
+                logBox.innerHTML = '';
+            }
+
+            const type = data.depth > 0 ? "Pothole" : "Speed Bump";
+            const colorClass = data.depth > 0 ? "text-red-400" : "text-amber-400";
+
+            const newLog = document.createElement('div');
+            newLog.className = "p-3 bg-gray-700/50 rounded-lg border border-gray-600";
+            newLog.innerHTML = `
+                <div class="flex justify-between">
+                    <span class="font-bold ${colorClass}">${type}</span>
+                    <span class="text-xs text-gray-400">${data.time}</span>
+                </div>
+                <div class="text-sm mt-1">Dev: <b>${data.depth.toFixed(1)} cm</b></div>
+                <div class="text-xs text-gray-400 mt-1">Src: ${data.source}</div>
+            `;
+            logBox.prepend(newLog); // Put at top
+
+            // Flashing animation to indicate anomaly on UI
+            if (data.image_available) {
+                const imgEl = document.getElementById('camera-feed');
+                imgEl.classList.add('opacity-50', 'border-4', 'border-red-500');
+                setTimeout(() => {
+                    imgEl.classList.remove('opacity-50', 'border-4', 'border-red-500');
+                }, 500);
+            }
+        });
+    </script>
+</body>
+
+</html>

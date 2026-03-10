@@ -24,14 +24,11 @@ This repository contains the complete firmware and Edge device software for the 
 *   `TRIG` -> Pi GPIO 23 (Pin 16)
 *   `ECHO` -> Pi GPIO 24 (Pin 18)  *(**Warning**: Put a 1k resistor from ECHO to GPIO 24, and a 2k resistor from GPIO 24 to GND to step the 5V signal down to 3.3V.)*
 
-## 3. Flashing the ESP32-CAM
-1.  Open `esp32_cam/esp32_cam.ino` in the Arduino IDE.
-2.  Install the **ESP32 Board Manager** via Arduino IDE settings.
-3.  Select **AI Thinker ESP32-CAM** under Tools -> Board.
-4.  Change the `ssid` and `password` variables in the code to your Wi-Fi credentials (e.g., your mobile hotspot or home network).
-5.  Compile and upload using an FTDI Programmer.
-6.  Once running, open the Serial Monitor (115200 baud) to find the ESP32's assigned IP Address.
-7.  Update `pi_edge/main.py` line `26` with this IP Address.
+## 3. ESP32-CAM Setup
+Since you are using the URL `http://192.168.149.173:81/stream`, you are already running a live video stream on your ESP32-CAM! 
+
+**You do NOT need to flash any new code to it.** 
+The Python edge code and dashboard have been specifically updated to read from your exact live video stream URL. Just make sure the ESP32-CAM is powered up and on the same Wi-Fi network as the Raspberry Pi.
 
 ## 4. Raspberry Pi Deployment Steps
 
@@ -60,14 +57,17 @@ Perform these steps on your Windows PC to push this code, then pull it on your R
     ```bash
     sudo apt update
     sudo apt install python3-pip python3-opencv
-    pip3 install pyserial RPi.GPIO requests numpy matplotlib
+    pip3 install pyserial RPi.GPIO requests numpy matplotlib flask flask-socketio eventlet
     ```
-4.  Run the main system loop:
+4.  Run the main system loop (with live Web Dashboard):
     ```bash
-    python3 main.py
+    python3 dashboard.py
     ```
+5.  Open your internet browser on your phone or PC (connected to the same Wi-Fi) and navigate to the IP address of your Raspberry Pi at port 5000:
+    `http://YOUR_PI_IP_ADDRESS:5000`
 
 ## 5. System Features
+*   **Live Web Dashboard:** See a real-time graph of the road topology from the LiDAR, view live ESP32-CAM images, and get a log feed whenever a pothole is scanned.
 *   **Dual Depth Fusion:** Continuously queries the TF-Luna LiDAR. If invalid data or a disconnection occurs, seamlessly switches to the HC-SR04 logic.
 *   **3D Mesh Modeling:** When an anomaly is detected (>5cm relative depth), it captures a rolling depth buffer and artificially sweeps it laterally to create an `.obj` 3D mesh map and a `.png` topology plot.
 *   **Remote Vision:** Triggers the ESP32-CAM over HTTP to snapshot the pothole synchronously. All data is saved to the `pi_edge/scans_3d/` folder on your Pi.
