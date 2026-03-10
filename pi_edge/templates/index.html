@@ -5,173 +5,220 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SmartRoad 3D Dashboard</title>
-    <!-- Include Socket.IO -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.js"></script>
-    <!-- Include Plotly.js -->
     <script src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>
-    <!-- Using TailwindCSS for quick styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
-            background-color: #0f172a;
-            color: #f8fafc;
+            background-color: #0e1117;
+            color: #fafafa;
             font-family: 'Inter', sans-serif;
+        }
+
+        .metric-card {
+            background-color: #262730;
+            border: 1px solid #4a4b50;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+        }
+
+        .metric-label {
+            font-size: 0.85rem;
+            color: #a1a1aa;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
     </style>
 </head>
 
-<body class="p-6">
+<body class="p-4 md:p-8">
     <div class="max-w-7xl mx-auto space-y-6">
 
         <!-- Header -->
-        <header class="flex justify-between items-center border-b border-gray-700 pb-4">
+        <header class="flex justify-between items-start pb-2 border-b border-gray-700">
             <div>
-                <h1
-                    class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">
-                    SmartRoad Pothole System v2.0
+                <h1 class="text-3xl font-bold flex items-center gap-2">
+                    🕳️ Pothole Detection — Dual Sensor Fusion (Flask)
                 </h1>
-                <p class="text-gray-400 mt-1">Live Dashboard — Dual Sensor Fusion + 3D Scanner</p>
+                <p class="text-gray-400 mt-2 text-sm">Background thread · 50 Hz sensor · 10 Hz UI · Instant distance
+                    updates</p>
             </div>
             <div id="connection-status"
-                class="px-4 py-2 rounded-full bg-red-500/20 text-red-500 border border-red-500/50 text-sm font-medium">
+                class="px-4 py-2 rounded bg-red-500/20 text-red-500 border border-red-500/50 text-sm font-bold">
                 Disconnected
             </div>
         </header>
 
-        <!-- Main Content Grid -->
+        <!-- Status Bar -->
+        <div
+            class="flex items-center gap-4 bg-green-900/20 text-green-400 p-3 rounded border border-green-500/30 font-medium">
+            <span id="conn-text">✅ <b>Streaming</b> Sensor | Direct synchronous polling</span>
+            <span class="ml-auto text-sm text-gray-400" id="status-bar">Waiting for data...</span>
+        </div>
+
+        <!-- Metrics Grid -->
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+            <div class="metric-card">
+                <div class="metric-label">📐 Baseline</div>
+                <div class="metric-value" id="m-base">-- cm</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">📡 LiDAR/US</div>
+                <div class="metric-value" id="m-dist">-- cm</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">↕️ Deviation</div>
+                <div class="metric-value" id="m-dev">-- cm</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">🕳️ Potholes</div>
+                <div class="metric-value text-red-400" id="m-pot">0</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">🔶 Bumps</div>
+                <div class="metric-value text-orange-400" id="m-bmp">0</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">📏 Last Depth</div>
+                <div class="metric-value" id="m-last">-- cm</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">🔌 Source</div>
+                <div class="text-sm font-bold mt-2 text-blue-300" id="m-src">Waiting...</div>
+            </div>
+        </div>
+
+        <hr class="border-gray-700 my-4">
+
+        <!-- Main Content -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-            <!-- Left Side: Live Graph -->
-            <div class="lg:col-span-2 bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-xl">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold">Live Depth Sensor Profile</h2>
-                    <span id="current-sensor" class="text-xs px-2 py-1 bg-gray-700 rounded text-gray-300">Sensor:
-                        Waiting...</span>
-                </div>
-                <div id="depth-chart" class="w-full h-[400px]"></div>
-            </div>
-
-            <!-- Right Side: Camera & Anomalies -->
+            <!-- Camera & Logs -->
             <div class="space-y-6">
-                <!-- Camera Feed -->
-                <div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-xl">
-                    <h2 class="text-xl font-semibold mb-4">ESP32-CAM Live Feed</h2>
-                    <div
-                        class="relative w-full aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center border border-gray-600">
-                        <!-- We directly embed the live stream URL to stream real-time video to the dashboard -->
+                <div>
+                    <h3 class="text-lg font-bold mb-2">📸 ESP32-CAM Live Feed</h3>
+                    <div class="w-full aspect-video bg-black rounded-lg overflow-hidden border-2 border-gray-600">
+                        <!-- DIRECT STREAM URL EMBED -->
                         <img id="camera-feed" class="w-full h-full object-cover" src="http://192.168.149.173:81/stream"
-                            alt="Camera Stream Disconnected"
-                            onerror="this.onerror=null; this.src=''; this.alt='Stream Offline';" />
+                            alt="Stream Offline" onerror="this.src=''; this.alt='Stream Offline';" />
                     </div>
                 </div>
 
-                <!-- Last Anomaly Stats -->
-                <div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-xl">
-                    <h2 class="text-xl font-semibold mb-3">Latest Anomaly</h2>
-                    <div id="anomaly-log" class="space-y-3">
-                        <p class="text-gray-400 italic text-sm">No anomalies logged yet.</p>
-                    </div>
+                <div class="bg-[#262730] rounded-lg p-4 border border-gray-700 h-[300px] overflow-y-auto">
+                    <h3 class="text-md font-bold mb-3 border-b border-gray-600 pb-2">📋 Confirmations Log</h3>
+                    <table class="w-full text-sm text-left">
+                        <thead class="text-gray-400">
+                            <tr>
+                                <th class="pb-2">Time</th>
+                                <th class="pb-2">Type</th>
+                                <th class="pb-2">Dev</th>
+                                <th class="pb-2">Depth</th>
+                            </tr>
+                        </thead>
+                        <tbody id="log-body" class="whitespace-nowrap">
+                            <!-- Logs go here -->
+                        </tbody>
+                    </table>
                 </div>
             </div>
+
+            <!-- Graphs -->
+            <div class="lg:col-span-2 space-y-4">
+                <h3 class="text-lg font-bold">📡 Live Stream Deviation</h3>
+                <div class="bg-[#262730] p-2 rounded-lg border border-gray-700">
+                    <div id="dev-chart" class="w-full h-[450px]"></div>
+                </div>
+            </div>
+
         </div>
     </div>
 
     <!-- Frontend Logic -->
     <script>
-        // Connect to the Flask-SocketIO server
         const socket = io();
+        const chartDiv = document.getElementById('dev-chart');
 
-        // Plotly Chart Setup
-        const chartDiv = document.getElementById('depth-chart');
-        const maxPoints = 100; // Number of points to show on the x-axis
-        let timeArray = [];
-        let depthArray = [];
-
+        // Plotly setup
         const layout = {
-            plot_bgcolor: '#1f2937', paper_bgcolor: '#1f2937',
-            margin: { t: 10, b: 40, l: 40, r: 10 },
-            xaxis: { title: 'Time', showgrid: false, color: '#9ca3af' },
-            yaxis: { title: 'Depth Deviation (cm)', color: '#9ca3af', gridcolor: '#374151' },
-            font: { color: '#f8fafc' },
+            plot_bgcolor: '#262730', paper_bgcolor: '#262730',
+            margin: { t: 10, b: 30, l: 40, r: 10 },
+            xaxis: { showticklabels: false, showgrid: false },
+            yaxis: { title: 'Deviation (cm)', color: '#d1d5db', gridcolor: '#4b5563' },
+            font: { color: '#fafafa' },
             showlegend: false
         };
 
         Plotly.newPlot(chartDiv, [{
-            x: timeArray, y: depthArray,
+            y: [],
             type: 'scatter', mode: 'lines',
-            line: { color: '#34d399', width: 2 },
-            fill: 'toself', fillcolor: 'rgba(52, 211, 153, 0.1)'
+            line: { color: '#ef4444', width: 2 },
+            fill: 'tozeroy', fillcolor: 'rgba(239, 68, 68, 0.1)'
         }], layout, { responsive: true });
 
-        // Socket Events
+        // Socket events
         socket.on('connect', () => {
             const el = document.getElementById('connection-status');
             el.textContent = 'Connected Live';
-            el.className = 'px-4 py-2 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 text-sm font-medium';
+            el.className = 'px-4 py-2 rounded bg-green-500/20 text-green-400 border border-green-500/50 text-sm font-bold';
         });
 
         socket.on('disconnect', () => {
             const el = document.getElementById('connection-status');
             el.textContent = 'Disconnected';
-            el.className = 'px-4 py-2 rounded-full bg-red-500/20 text-red-500 border border-red-500/50 text-sm font-medium';
+            el.className = 'px-4 py-2 rounded bg-red-500/20 text-red-500 border border-red-500/50 text-sm font-bold';
         });
 
-        socket.on('sensor_data', (data) => {
-            const timeStr = new Date().toLocaleTimeString();
+        // Fired at 10Hz
+        socket.on('ui_state', (data) => {
+            document.getElementById('m-base').textContent = data.baseline + " cm";
+            document.getElementById('m-dist').textContent = data.dist + " cm";
+            document.getElementById('m-dev').textContent = (data.dev > 0 ? "+" : "") + data.dev + " cm";
+            document.getElementById('m-pot').textContent = data.potholes;
+            document.getElementById('m-bmp').textContent = data.bumps;
+            document.getElementById('m-last').textContent = data.last_depth + " cm";
+            document.getElementById('m-src').textContent = data.source;
+            document.getElementById('status-bar').textContent = `Current state: ${data.status}`;
 
-            // Update Sensor Badge
-            document.getElementById('current-sensor').textContent = `Sensor: ${data.source}`;
+            // Update graph color based on status
+            let color = '#3b82f6'; // Blue for normal
+            if (data.status.includes('Pothole')) color = '#ef4444'; // Red
+            if (data.status.includes('Bump')) color = '#f59e0b'; // Orange
 
-            // Update Graph
-            timeArray.push(timeStr);
-            depthArray.push(data.relative_depth);
-
-            if (timeArray.length > maxPoints) {
-                timeArray.shift();
-                depthArray.shift();
-            }
-
-            // Change color based on values - Pothole > 5 (red), Bump < -5 (orange), Normal (green)
-            let color = '#34d399'; // Emerald
-            if (data.relative_depth > 5) color = '#ef4444'; // Red for pothole
-            else if (data.relative_depth < -5) color = '#f59e0b'; // Amber for bump
-
+            // Rapid graph update
             Plotly.update(chartDiv, {
-                x: [timeArray], y: [depthArray],
-                'line.color': color
+                y: [data.dev_hist],
+                'line.color': color,
+                'fillcolor': color.replace(')', ', 0.1)').replace('rgb', 'rgba')
             });
         });
 
+        // Fired instantly on confirmed anomaly
         socket.on('anomaly', (data) => {
-            // Log to the right panel
-            const logBox = document.getElementById('anomaly-log');
-            if (logBox.innerHTML.includes('No anomalies')) {
-                logBox.innerHTML = '';
-            }
+            const tbody = document.getElementById('log-body');
+            const row = document.createElement('tr');
+            row.className = "border-b border-gray-700/50 hover:bg-gray-700/30";
 
-            const type = data.depth > 0 ? "Pothole" : "Speed Bump";
-            const colorClass = data.depth > 0 ? "text-red-400" : "text-amber-400";
+            let typeColor = "text-gray-300";
+            if (data.Type.includes('Pothole')) typeColor = "text-red-400 font-bold";
+            if (data.Type.includes('Bump')) typeColor = "text-orange-400 font-bold";
 
-            const newLog = document.createElement('div');
-            newLog.className = "p-3 bg-gray-700/50 rounded-lg border border-gray-600";
-            newLog.innerHTML = `
-                <div class="flex justify-between">
-                    <span class="font-bold ${colorClass}">${type}</span>
-                    <span class="text-xs text-gray-400">${data.time}</span>
-                </div>
-                <div class="text-sm mt-1">Dev: <b>${data.depth.toFixed(1)} cm</b></div>
-                <div class="text-xs text-gray-400 mt-1">Src: ${data.source}</div>
+            row.innerHTML = `
+                <td class="py-2">${data.Time}</td>
+                <td class="py-2 ${typeColor}">${data.Type}</td>
+                <td class="py-2">${data.Dev}</td>
+                <td class="py-2 font-mono">${data.Depth}</td>
             `;
-            logBox.prepend(newLog); // Put at top
+            tbody.prepend(row);
 
-            // Flashing animation to indicate anomaly on UI
-            if (data.image_available) {
-                const imgEl = document.getElementById('camera-feed');
-                imgEl.classList.add('opacity-50', 'border-4', 'border-red-500');
-                setTimeout(() => {
-                    imgEl.classList.remove('opacity-50', 'border-4', 'border-red-500');
-                }, 500);
-            }
+            // Flash camera
+            const imgEl = document.getElementById('camera-feed');
+            imgEl.classList.add('border-red-500');
+            setTimeout(() => { imgEl.classList.remove('border-red-500'); }, 300);
         });
     </script>
 </body>
